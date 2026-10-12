@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,11 +30,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.byok.model.AiProvider
 import com.example.model.SpreadsheetWorkbook
 
 @Composable
 fun TopAppBarSection(
     workbook: SpreadsheetWorkbook,
+    activeProvider: AiProvider,
+    activeModel: String,
+    hasKey: Boolean,
+    onOpenSettings: () -> Unit,
     onOpenHelp: () -> Unit,
     onShareSpreadsheet: () -> Unit
 ) {
@@ -81,9 +87,21 @@ fun TopAppBarSection(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Smart Excel Auto-Fill",
+                        text = if (hasKey) "${activeProvider.displayName} • $activeModel" else "BYOK Setup • Demo Ready",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (hasKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                    )
+                }
+
+                // Settings Button (BYOK Management)
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.testTag("settings_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "AI Provider and Key Settings",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
 
@@ -95,7 +113,7 @@ fun TopAppBarSection(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.HelpOutline,
                         contentDescription = "Help and Instructions",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 

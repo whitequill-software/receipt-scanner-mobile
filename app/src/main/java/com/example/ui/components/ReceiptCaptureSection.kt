@@ -20,13 +20,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,6 +61,10 @@ import java.util.Locale
 @Composable
 fun ReceiptCaptureSection(
     isAnalyzing: Boolean,
+    hasKey: Boolean,
+    providerName: String,
+    modelName: String,
+    onOpenSettings: () -> Unit,
     onReceiptCaptured: (Uri) -> Unit,
     onSelectSampleReceipt: (SampleReceipt) -> Unit
 ) {
@@ -121,14 +126,60 @@ fun ReceiptCaptureSection(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Capture with camera or select a receipt photo",
+                        text = if (hasKey) "Ready with $providerName ($modelName)" else "Requires API key or explore Demo mode",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Missing Key Notice with Setup Action
+            if (!hasKey) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "BYOK Setup Required for Real Scans",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Enter your $providerName key to scan receipts, or test with Demo samples below.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        OutlinedButton(
+                            onClick = onOpenSettings,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("setup_key_button")
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Setup", fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             // Action Buttons Row
             Row(
@@ -138,23 +189,26 @@ fun ReceiptCaptureSection(
                 // Primary Camera Button
                 Button(
                     onClick = {
-                        try {
-                            val imagesDir = File(context.cacheDir, "receipt_images")
-                            if (!imagesDir.exists()) imagesDir.mkdirs()
-                            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                            val imageFile = File(imagesDir, "RECEIPT_$timeStamp.jpg")
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                imageFile
-                            )
-                            tempCameraUri = uri
-                            cameraLauncher.launch(uri)
-                        } catch (e: Exception) {
-                            // Fallback to gallery picker if camera intent creation fails
-                            photoPickerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
+                        if (!hasKey) {
+                            onOpenSettings()
+                        } else {
+                            try {
+                                val imagesDir = File(context.cacheDir, "receipt_images")
+                                if (!imagesDir.exists()) imagesDir.mkdirs()
+                                val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                                val imageFile = File(imagesDir, "RECEIPT_$timeStamp.jpg")
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    imageFile
+                                )
+                                tempCameraUri = uri
+                                cameraLauncher.launch(uri)
+                            } catch (e: Exception) {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -174,9 +228,13 @@ fun ReceiptCaptureSection(
                 // Gallery Button
                 OutlinedButton(
                     onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                        if (!hasKey) {
+                            onOpenSettings()
+                        } else {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
                     },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -215,12 +273,12 @@ fun ReceiptCaptureSection(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Gemini Vision Analyzing...",
+                                text = "Analyzing with $providerName...",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "Extracting merchant, totals & mapping spreadsheet columns",
+                                text = "Model: $modelName • Extracting values & mapping spreadsheet columns",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -231,7 +289,7 @@ fun ReceiptCaptureSection(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Emulator / Quick Test Samples Section
+            // Quick Test Samples Section (DEMO MODE - Clearly Labeled)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
@@ -241,7 +299,7 @@ fun ReceiptCaptureSection(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "QUICK TEST SAMPLES (INSTANT DEMO)",
+                    text = "DEMO SAMPLES (NO KEY REQUIRED)",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.5.sp
@@ -331,7 +389,7 @@ fun ReceiptCaptureSection(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "$${sample.total} • ${sample.category}",
+                                    text = "$${sample.total} • [Demo Mode]",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                                 )
