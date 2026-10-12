@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for Receipt Scanner Android app: spreadsheet upload/selection, camera/gallery receipt capture, Gemini vision extraction, column mapping, interactive review, and XLSX export.",
+  "updatedAt":  "2026-10-12T03:50:38.286856282Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Receipt Scanner",
+  "description": "Scan receipts with your camera, automatically map fields to Excel spreadsheet columns, and download updated spreadsheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
