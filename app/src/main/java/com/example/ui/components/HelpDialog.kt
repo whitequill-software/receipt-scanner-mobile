@@ -23,7 +23,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.HelpCenter
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -95,7 +95,7 @@ fun HelpDialog(onDismiss: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Step-by-step user guide & scanning tips",
+                            text = "User guide, BYOK setup & scanning tips",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -123,6 +123,15 @@ fun HelpDialog(onDismiss: () -> Unit) {
                 ) {
                     HelpStepCard(
                         stepNumber = "1",
+                        icon = Icons.Default.Key,
+                        title = "Configure Your AI Provider (BYOK)",
+                        description = "Tap the gear icon in the top bar to choose your preferred AI provider (Google Gemini, OpenAI, Anthropic Claude, or a Custom OpenAI-compatible endpoint). Enter and validate your API key. Keys are encrypted in Android Keystore on your device."
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    HelpStepCard(
+                        stepNumber = "2",
                         icon = Icons.Default.TableChart,
                         title = "Select or Upload Your Spreadsheet",
                         description = "Upload your existing .xlsx or .xls file using the 'Upload' button, or choose one of our built-in starter templates (e.g. Business Expenses, Travel & Per-Diem). The app automatically detects all column headers that need to be filled."
@@ -131,37 +140,37 @@ fun HelpDialog(onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(10.dp))
 
                     HelpStepCard(
-                        stepNumber = "2",
-                        icon = Icons.Default.CameraAlt,
-                        title = "Snap a Receipt with Camera",
-                        description = "Tap 'Camera' to take a high-resolution photo of your paper receipt, or 'Gallery' to pick an existing image. For best results, lay the receipt flat in good lighting and capture all edges including the vendor name, date, and final total."
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    HelpStepCard(
                         stepNumber = "3",
-                        icon = Icons.Default.AutoAwesome,
-                        title = "Automatic AI Column Alignment",
-                        description = "Powered by Google Gemini Vision intelligence, the app reads the receipt text and automatically matches the extracted values (merchant, date, subtotal, tax, category, total) to your spreadsheet's exact column headers."
+                        icon = Icons.Default.CameraAlt,
+                        title = "Capture Receipt with Camera",
+                        description = "Tap 'Camera' to take a high-resolution photo of your paper receipt, or 'Gallery' to pick an existing image. For best results, lay the receipt flat in good lighting and capture all edges including vendor, date, and final total."
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
                     HelpStepCard(
                         stepNumber = "4",
-                        icon = Icons.Default.Edit,
-                        title = "Review & Edit Before Saving",
-                        description = "A visual review screen appears allowing you to inspect every field side-by-side with the receipt. You can tap any text field to make quick manual adjustments before tapping 'Add to Sheet'."
+                        icon = Icons.Default.AutoAwesome,
+                        title = "AI Extraction & Column Alignment",
+                        description = "Your configured AI provider analyzes the receipt image and extracts merchant, date, amounts, tax, and category, automatically aligning them with your spreadsheet's exact column headers."
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
                     HelpStepCard(
                         stepNumber = "5",
+                        icon = Icons.Default.Edit,
+                        title = "Review & Edit Before Appending",
+                        description = "A visual review screen appears allowing you to inspect every field side-by-side with the receipt. The summary updates in real time as you edit fields. Tap 'Add to Sheet' to append the row."
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    HelpStepCard(
+                        stepNumber = "6",
                         icon = Icons.Default.Download,
-                        title = "Download or Share Your Updated Spreadsheet",
-                        description = "Each scanned receipt is appended as a new row in sequence. Tap 'Download .xlsx' to save the updated spreadsheet directly to your device, or tap 'Share' to email it or send it to your accounting team."
+                        title = "Download or Share Updated Spreadsheet",
+                        description = "Tap 'Download .xlsx' to save the updated spreadsheet directly to your device storage, or tap 'Share' to email it or send it to your accounting team."
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -184,7 +193,7 @@ fun HelpDialog(onDismiss: () -> Unit) {
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "PRO TIPS FOR BEST RESULTS",
+                                    text = "HONEST BILLING & USAGE TIPS",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 0.5.sp
@@ -194,7 +203,7 @@ fun HelpDialog(onDismiss: () -> Unit) {
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "• Custom spreadsheets: Use standard header names like 'Date', 'Vendor', 'Amount', 'Tax', 'Category' for instant 100% matching.\n• Multiple receipts: You can scan as many receipts as you want; each one adds a new row sequentially.\n• Quick demo: Tap any of the 'Quick Test Samples' to test the full pipeline immediately without taking real photos.",
+                                text = "• Consumer Subscriptions: ChatGPT Plus, Claude Pro, and Gemini Advanced are consumer web apps and do NOT include API credits. You must create an API developer account at the provider console.\n• Quota & Costs: Image calls consume vision input tokens according to your provider's pricing.\n• Demo Samples: Explore all spreadsheet features using the Quick Demo samples without needing an API key.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

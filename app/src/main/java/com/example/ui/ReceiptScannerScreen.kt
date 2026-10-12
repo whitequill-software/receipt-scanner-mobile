@@ -3,7 +3,6 @@ package com.example.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,9 +41,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.byok.model.ScanOutcome
 import com.example.ui.components.HelpDialog
 import com.example.ui.components.MappedReviewDialog
 import com.example.ui.components.ReceiptCaptureSection
+import com.example.ui.components.SettingsDialog
 import com.example.ui.components.SpreadsheetPickerCard
 import com.example.ui.components.SpreadsheetTableView
 import com.example.ui.components.TopAppBarSection
@@ -55,8 +56,15 @@ fun ReceiptScannerScreen(
 ) {
     val context = LocalContext.current
     val workbook by viewModel.workbook.collectAsStateWithLifecycle()
+    val activeProvider by viewModel.activeProvider.collectAsStateWithLifecycle()
+    val activeProfile by viewModel.activeProfile.collectAsStateWithLifecycle()
+    val validationResult by viewModel.validationResult.collectAsStateWithLifecycle()
     val isAnalyzing by viewModel.isAnalyzing.collectAsStateWithLifecycle()
-    val currentExtraction by viewModel.currentExtraction.collectAsStateWithLifecycle()
+    val currentScanOutcome by viewModel.currentScanOutcome.collectAsStateWithLifecycle()
+    val currentReceiptData by viewModel.currentReceiptData.collectAsStateWithLifecycle()
+    val isHeaderDrift by viewModel.isHeaderDrift.collectAsStateWithLifecycle()
+
+    val showSettingsDialog by viewModel.showSettingsDialog.collectAsStateWithLifecycle()
     val showReviewDialog by viewModel.showReviewDialog.collectAsStateWithLifecycle()
     val showHelpDialog by viewModel.showHelpDialog.collectAsStateWithLifecycle()
     val userMessage by viewModel.userMessage.collectAsStateWithLifecycle()
@@ -66,6 +74,10 @@ fun ReceiptScannerScreen(
         topBar = {
             TopAppBarSection(
                 workbook = workbook,
+                activeProvider = activeProvider,
+                activeModel = activeProfile.selectedModel,
+                hasKey = activeProfile.hasKey,
+                onOpenSettings = { viewModel.openSettings() },
                 onOpenHelp = { viewModel.openHelp() },
                 onShareSpreadsheet = { viewModel.shareSpreadsheet(context) }
             )
@@ -79,7 +91,7 @@ fun ReceiptScannerScreen(
                 .padding(innerPadding)
                 .navigationBarsPadding()
         ) {
-            // Status Toast Banner
+            // Status Feedback Banner
             AnimatedVisibility(
                 visible = userMessage != null,
                 enter = fadeIn(),
@@ -181,6 +193,10 @@ fun ReceiptScannerScreen(
 
                             ReceiptCaptureSection(
                                 isAnalyzing = isAnalyzing,
+                                hasKey = activeProfile.hasKey,
+                                providerName = activeProvider.displayName,
+                                modelName = activeProfile.selectedModel,
+                                onOpenSettings = { viewModel.openSettings() },
                                 onReceiptCaptured = { uri -> viewModel.processReceiptImage(context, uri) },
                                 onSelectSampleReceipt = { sample -> viewModel.loadSampleReceipt(context, sample) }
                             )
@@ -208,11 +224,43 @@ fun ReceiptScannerScreen(
         }
     }
 
+    // BYOK Settings Dialog
+    if (showSettingsDialog) {
+        SettingsDialog(
+            currentProvider = activeProvider,
+            currentProfile = activeProfile,
+            validationResult = validationResult,
+            onSelectProvider = { provider -> viewModel.selectProvider(provider) },
+            onSaveKeyAndModel = { key, model, url, host ->
+                viewModel.saveKeyAndModel(key, model, url, host)
+            },
+            onValidateKey = { key, model, url, host ->
+                viewModel.validateKey(key, model, url, host)
+            },
+            onDeleteKey = { viewModel.deleteCurrentProviderKey() },
+            onDismiss = { viewModel.closeSettings() }
+        )
+    }
+
     // Review & Edit Dialog
-    if (showReviewDialog && currentExtraction != null) {
+    if (showReviewDialog && currentReceiptData != null) {
+        val providerLabel = when (val outcome = currentScanOutcome) {
+            is ScanOutcome.Success -> outcome.providerId
+            is ScanOutcome.Demo -> "Demo"
+            else -> activeProvider.id
+        }
+        val modelLabel = when (val outcome = currentScanOutcome) {
+            is ScanOutcome.Success -> outcome.modelUsed
+            is ScanOutcome.Demo -> "Demo Sample"
+            else -> activeProfile.selectedModel
+        }
+
         MappedReviewDialog(
-            extraction = currentExtraction!!,
-            columns = workbook.headers,
+            receiptData = currentReceiptData!!,
+            providerId = providerLabel,
+            modelUsed = modelLabel,
+            targetColumns = workbook.headers,
+            isHeaderDrift = isHeaderDrift,
             onFieldChange = { col, value -> viewModel.updateMappedField(col, value) },
             onConfirmAddRow = { viewModel.commitCurrentExtractionToSpreadsheet() },
             onDismiss = { viewModel.closeReviewDialog() }

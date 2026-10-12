@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for Receipt Scanner Android app: spreadsheet upload/selection, camera/gallery receipt capture, Gemini vision extraction, column mapping, interactive review, and XLSX export.",
-  "updatedAt":  "2026-10-12T03:50:38.286856282Z",
+  "summary":  "Implementation plan for multi-provider BYOK (Bring Your Own Key) in Receipt Scanner Android app, supporting Gemini, OpenAI, Anthropic, and custom OpenAI-compatible endpoints with Keystore-backed encryption, honest validation, and safe review flows.",
+  "updatedAt":  "2026-10-12T10:46:29.293476313Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

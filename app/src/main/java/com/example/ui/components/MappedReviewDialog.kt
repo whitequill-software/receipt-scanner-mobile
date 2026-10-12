@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,16 +45,42 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
-import com.example.model.ReceiptExtractionResult
+import com.example.byok.model.ReceiptData
+import java.util.Locale
 
 @Composable
 fun MappedReviewDialog(
-    extraction: ReceiptExtractionResult,
-    columns: List<String>,
+    receiptData: ReceiptData,
+    providerId: String,
+    modelUsed: String,
+    targetColumns: List<String>,
+    isHeaderDrift: Boolean = false,
     onFieldChange: (String, String) -> Unit,
     onConfirmAddRow: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    // Dynamic summary derived from currently edited mapped fields so changes immediately reflect!
+    val displayMerchant = remember(receiptData.mappedColumns, receiptData.merchant) {
+        val colMatch = receiptData.mappedColumns.entries.find { (k, v) ->
+            (k.contains("vendor", true) || k.contains("merchant", true) || k.contains("payee", true)) && v.isNotBlank()
+        }?.value
+        colMatch ?: receiptData.merchant.ifBlank { "Receipt" }
+    }
+
+    val displayDate = remember(receiptData.mappedColumns, receiptData.date) {
+        val colMatch = receiptData.mappedColumns.entries.find { (k, v) ->
+            k.contains("date", true) && v.isNotBlank()
+        }?.value
+        colMatch ?: receiptData.date
+    }
+
+    val displayTotal = remember(receiptData.mappedColumns, receiptData.total) {
+        val colMatch = receiptData.mappedColumns.entries.find { (k, v) ->
+            (k.contains("total", true) || k.contains("amount", true) || k.contains("cost", true)) && v.isNotBlank()
+        }?.value
+        colMatch ?: receiptData.total
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -100,9 +128,9 @@ fun MappedReviewDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Verify values before appending to spreadsheet",
+                            text = if (receiptData.isDemo) "Demo Mode • Review and test append" else "Extracted via $providerId ($modelUsed)",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (receiptData.isDemo) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
                         )
                     }
 
@@ -126,8 +154,37 @@ fun MappedReviewDialog(
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
                 ) {
+                    // Header Drift Alert
+                    if (isHeaderDrift) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Spreadsheet columns changed after this scan was initiated. Discard and rescan to avoid appending incompatible columns.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+
                     // Image thumbnail preview if available
-                    if (extraction.imageUri != null) {
+                    if (receiptData.imageUri != null) {
                         Card(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
@@ -135,7 +192,7 @@ fun MappedReviewDialog(
                                 .height(140.dp)
                         ) {
                             AsyncImage(
-                                model = extraction.imageUri,
+                                model = receiptData.imageUri,
                                 contentDescription = "Scanned Receipt Image",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxWidth()
@@ -144,7 +201,7 @@ fun MappedReviewDialog(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
 
-                    // Key Summary Cards
+                    // Live Summary Card (updates as fields are edited!)
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
@@ -165,18 +222,20 @@ fun MappedReviewDialog(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = extraction.merchant.ifBlank { "Receipt Merchant" },
+                                    text = displayMerchant,
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Text(
-                                    text = "${extraction.date} • ${extraction.category}",
+                                    text = "${displayDate.ifBlank { "Date" }} • ${receiptData.category.ifBlank { "Category" }}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
                             Text(
-                                text = if (extraction.totalAmount.isNotBlank()) "$${extraction.totalAmount}" else "",
+                                text = if (displayTotal.isNotBlank()) {
+                                    if (displayTotal.startsWith("$")) displayTotal else "$$displayTotal"
+                                } else "",
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -188,7 +247,7 @@ fun MappedReviewDialog(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "SPREADSHEET COLUMN MAPPINGS",
+                        text = "SPREADSHEET COLUMN MAPPINGS (EDITABLE)",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
@@ -199,8 +258,8 @@ fun MappedReviewDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Column Fields Editor
-                    columns.forEach { colName ->
-                        val currentValue = extraction.mappedColumns[colName] ?: ""
+                    targetColumns.forEach { colName ->
+                        val currentValue = receiptData.mappedColumns[colName] ?: ""
                         Column(modifier = Modifier.padding(vertical = 4.dp)) {
                             OutlinedTextField(
                                 value = currentValue,
@@ -235,6 +294,7 @@ fun MappedReviewDialog(
 
                     Button(
                         onClick = onConfirmAddRow,
+                        enabled = !isHeaderDrift,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         ),

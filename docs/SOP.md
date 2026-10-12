@@ -1,51 +1,141 @@
-# Receipt Scanner Mobile Standard Operating Procedure
+# Receipt Scanner Mobile BYOK Standard Operating Procedure
 
 Repository: [whitequill-software/receipt-scanner-mobile](https://github.com/whitequill-software/receipt-scanner-mobile)  
-Reviewed source: [`008bd3778d73e521ad0e7df20134492a5943dcd9`](https://github.com/whitequill-software/receipt-scanner-mobile/tree/008bd3778d73e521ad0e7df20134492a5943dcd9) on `main`  
-Review date: 12 October 2026, Asia/Manila  
-Intended repository location: `docs/SOP.md`
+Reviewed commit: [`ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500`](https://github.com/whitequill-software/receipt-scanner-mobile/tree/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500) on `main`  
+Reviewed: 12 October 2026, Asia/Manila  
+Repository file: `docs/SOP.md`
 
-## 1. Purpose and operating limits
+## 1. Purpose and current status
 
-Use this procedure to set up, run, test, distribute, and maintain the Android Receipt Scanner app, and to capture receipts into a spreadsheet safely. It is based on the committed source and configuration. Commands below are procedures to execute on a prepared workstation; they were not executed during this review.
+This procedure covers the revised Android receipt scanner: provider setup, user-owned API keys, receipt processing, spreadsheet export, development, verification, deployment, maintenance, security, and troubleshooting. It describes the committed implementation, including remaining limitations. It replaces the earlier shared-key SOP.
 
-**Current release assessment: use for controlled evaluation until the data integrity and security gaps in section 11 are addressed.** Missing or placeholder API keys, network/API failures, and invalid responses can produce invented receipt values. The review dialog does not expose the error or clearly identify these values as simulated. Always compare every field with the original receipt before adding it to a real workbook.
+The source now has separate Gemini, OpenAI, Anthropic, and custom OpenAI-compatible adapters. Real scan failures return errors instead of the previous invented sample data. Demo samples are separate and labeled. API keys are entered in the app, stored encrypted, and sent in authentication headers rather than request URLs.
 
-The app keeps workbook changes in memory. Export and independently reopen the file after every working session and before switching templates, importing another workbook, closing the app, or installing an update. Android backup settings do not save this in-memory workbook.
+**Use controlled evaluation before public release.** The updated source was inspected, but no APK, live API request, device test, or build was executed in this review. Custom-endpoint credential isolation and redirect handling still need fixes and testing. The model list also contains retired models. This document does not certify production readiness.
 
-### What the repository implements
+**Always export and reopen the workbook before ending a session.** Workbook rows still live in ViewModel memory and can be lost on process restart. Changing providers preserves the workbook, but changing templates or importing another file replaces it.
 
-| Area | Actual implementation |
-| --- | --- |
-| Platform | Native Android, Kotlin, Jetpack Compose; Android 7.0/API 24 minimum |
-| App identity | `com.aistudio.receiptscanner.xkvjtw`; namespace `com.example`; version code `1`, version name `1.0` |
-| Receipt input | External camera through `TakePicture`, Android visual media picker, or fixed demo samples |
-| AI | Direct OkHttp POST to Google Gemini `gemini-3.5-flash:generateContent`; key read from `BuildConfig.GEMINI_API_KEY` |
-| Image transfer | Image decoded, resized to a maximum dimension of 1024 pixels, JPEG quality 85, Base64 embedded in the request |
-| Spreadsheet handling | Custom ZIP/XML engine; XLSX, SpreadsheetML XML, and basic delimited text import; newly generated single-sheet XLSX export |
-| Storage | ViewModel/StateFlow memory; camera images in `cache/receipt_images`, share files in `cache/exports`; explicit export through Android's file chooser |
-| Backend and accounts | No application backend, sign-in flow, database persistence, or cloud workbook synchronization implemented in the reviewed source |
-| Automation | No `.github/workflows` files; no GitHub Releases returned during review |
+## 2. Responsibilities and operating rules
 
-The separate `whitequill-software/receipt-scanner` repository contains Google Apps Script versions. This SOP covers the Android repository; do not apply the Apps Script deployment steps to this app.
+- **Operator:** choose the correct provider, manage their own key, verify receipt values, remove sample rows, export, and check the saved file.
+- **Maintainer:** maintain provider adapters/model options, verify security and compatibility, run tests, and update this SOP with implementation changes.
+- **Release owner:** approve acceptance evidence, protect signing credentials, record release versions/artifacts, and manage rollback.
 
-## 2. Responsibilities
+Use only receipt data approved for the selected provider. Each scan sends an image and target spreadsheet column names directly to that provider or custom server. Keep original receipts in approved storage; exported workbooks do not embed receipt images or provide an immutable audit trail.
 
-- **Operator:** obtain an approved receipt image, verify every mapped field, remove demo rows, export, and confirm the saved workbook.
-- **Maintainer:** prepare the build environment, configure evaluation credentials, fix defects, run checks, and update this SOP when behavior changes.
-- **Release owner:** control signing credentials, approve the tested artifact, record its version and source commit, and retain recovery copies.
+## 3. Choose and configure an AI provider
 
-## 3. Prepare the development workstation
+### 3.1 What is implemented
 
-### 3.1 Required tools and versions
+| Provider option | Request implementation | Default in the reviewed app |
+| --- | --- | --- |
+| Google Gemini | `generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`; `x-goog-api-key`; inline JPEG; JSON response mode | `gemini-2.5-flash` |
+| OpenAI | `api.openai.com/v1/chat/completions`; Bearer authorization; image data URL; JSON object response mode | `gpt-4o-mini` |
+| Anthropic Claude | `api.anthropic.com/v1/messages`; `x-api-key` and `anthropic-version: 2023-06-01`; Base64 JPEG | `claude-3-5-haiku-20241022` |
+| Custom OpenAI-Compatible | Normalized chat-completions URL; optional Bearer header at adapter level; text plus image data URL | User must enter a model |
 
-Install Git, an Android Studio version supporting AGP 9.1.1, Android SDK Platform 36.1, SDK Build Tools 36.0.0, platform tools, and an emulator or physical Android device. Set the Gradle JDK to JDK 17. Java source/target compatibility is 11 in the project; this does not replace the Gradle runtime JDK requirement.
+These are code defaults, not assurances of current availability. A provider integration does not make every model compatible. Choose a currently available image-capable model that accepts the adapter's request format.
 
-Repository pins: Android Gradle Plugin `9.1.1`, Gradle `9.3.1`, Kotlin Compose plugin `2.2.10`, KSP `2.3.5`, compile SDK `36` minor API `1`, target SDK `36`. Keep these pins together for the initial build. [Google's AGP compatibility table](https://developer.android.com/build/releases/agp-9-1-0-release-notes) confirms Gradle 9.3.1 and JDK 17 for AGP 9.1.1.
+**Anthropic action required:** all three Anthropic dropdown entries in this commit are retired according to the [official retirement table](https://platform.claude.com/docs/en/about-claude/model-deprecations): Sonnet 3.5 retired 28 October 2025, Haiku 3.5 retired 19 February 2026, and Opus 3 retired 5 January 2026. Do not use the default as a working recommendation. Enter a current accessible image-capable model manually, validate, and test it; maintainers must refresh the dropdown.
 
-### 3.2 Obtain the project
+Check [Gemini models](https://ai.google.dev/gemini-api/docs/models), [OpenAI models](https://developers.openai.com/api/docs/models), or the selected provider's documentation before release. No model/account combination was live-tested in this review.
 
-Run in PowerShell in your chosen development folder:
+### 3.2 First-time setup
+
+1. Obtain your own API credential from the selected provider: [Google AI Studio](https://aistudio.google.com/app/apikey), [OpenAI Platform](https://platform.openai.com/api-keys), or [Anthropic Console](https://console.anthropic.com/settings/keys). For a custom server, obtain its documented credential and model from its administrator.
+2. Review your API account's credit, quota, and billing settings. Consumer chat subscriptions and developer API billing are separate; do not assume a chat subscription supplies API credits.
+3. Tap the gear icon to open **AI Provider & Key Settings**.
+4. Select the provider. This changes the active provider immediately; **Done** closes the dialog without saving typed key/model changes and does not undo the provider selection.
+5. Enter the key. It is masked by default, with a visibility toggle. A saved key is not displayed back in the field; **Stored Encrypted** indicates that one exists.
+6. Select or type an image-capable model. For custom endpoints, complete section 4 first.
+7. Tap **Validate Key** once and wait. Validation sends no receipt, but Anthropic and custom validation perform a small generation request that may incur usage.
+8. Tap **Save Credentials** to persist the entered key and model/profile. Validation alone does not save them. Saving is not gated on successful validation.
+9. Run one sanitized test receipt and compare every field. Only this checks the actual image extraction path for that configuration.
+
+Provider selection resets to **Gemini** when a new ViewModel is created, including after process restart. Saved per-provider keys and model metadata remain available, but users must reselect another provider before scanning. Confirm the ready message on the Scanner tab each session.
+
+### 3.3 What validation actually proves
+
+| Option | Probe sent by this app | Interpretation |
+| --- | --- | --- |
+| Gemini | GET model list with `pageSize=1` | API accepted the key for a model-list request; it does not test the selected model or receipt images |
+| OpenAI | GET `/v1/models` | API accepted the model-list request; code checks model presence with a string match, but the success banner does not expose that result |
+| Anthropic | Text `ping` to the selected model with `max_tokens=1` | Small text request succeeded; may incur usage; image input was not tested |
+| Custom | Text `ping` to normalized chat endpoint with `max_tokens=1` | Endpoint handled this text request; may incur usage; vision and JSON extraction remain unverified |
+
+The internal vision-validation flag is inferred from a hardcoded model list for built-in providers, not an image probe. A green **Validation Successful** banner does not establish image support, available scan quota, or correct receipt extraction. Repeat validation after changing key, model, or endpoint; the old banner can remain visible after form edits.
+
+### 3.4 Replace or delete a key
+
+- To replace: select the provider, enter a new key, validate, and tap **Save Credentials**. Leaving the key field blank preserves the existing stored key when saving model/profile changes.
+- To delete locally: select the provider, tap **Delete Key**, and confirm. Repeat for each provider you want to remove. This does not revoke the key at its provider.
+- To revoke: use the provider's console. Review usage first if exposure is suspected. A scan already in progress may still hold its credential snapshot; local deletion is not a cancellation/revocation guarantee.
+- If credential storage becomes unreadable, the app treats it as empty. Re-enter the necessary keys. Saving one key after a corrupt store may replace the unreadable credential set, so check every provider.
+
+## 4. Custom endpoint procedure
+
+Custom support targets a chat-completions service that accepts text and a Base64 JPEG `image_url` and returns JSON text inside `choices[0].message.content`. Compatibility with Ollama, vLLM, OpenRouter, LocalAI, or another service is not established merely by its name. Its route, model, image format, and response behavior must match this adapter.
+
+1. Select **Custom OpenAI-Compatible**.
+2. Use a dedicated key for this service. Do not paste a Gemini, OpenAI, or Anthropic key unless that exact service is its authorized destination.
+3. Enter a full HTTPS endpoint, preferably ending in `/v1/chat/completions`. The code keeps that suffix, adds `/chat/completions` to `/v1`, or otherwise appends `/v1/chat/completions`. Unusual base paths can therefore be changed incorrectly.
+4. Enter the server's image-capable model identifier.
+5. Inspect **Target Host**, then tap its confirmation control. Confirmation checks hostname only, not scheme/port/full origin.
+6. Validate, save, and perform a sanitized receipt scan. Check the destination server and provider usage.
+
+**Current restrictions and workarounds:**
+
+- Only one custom provider slot exists. Its saved key is associated with `custom_openai`, not an exact endpoint. A hostname change can be confirmed while retaining the previous key. Before changing destination, delete the old custom key, close and reopen Settings, then enter the destination-specific key and confirm the new endpoint. Do not change settings during an active request.
+- Although the custom adapter allows an empty key, the ViewModel blocks every real scan with a blank key. Keyless local servers are therefore not supported end to end. Do not enter a dummy credential to bypass this limitation.
+- The endpoint validator permits local HTTP for `localhost`, `127.0.0.1`, and `10.0.2.2`, without restricting that exception to debug builds. The manifest does not explicitly allow cleartext traffic; local HTTP may still be blocked by Android. Use HTTPS for this SOP; local HTTP is not a verified supported flow.
+- An interceptor attempts redirect credential stripping, but automatic redirects remain enabled. Treat credential protection across redirects as unverified and avoid redirecting endpoints until this is fixed and tested.
+
+Production follow-up: bind credentials and consent to exact origins, reject authenticated cross-origin redirects, validate URLs strictly, and support keyless endpoints deliberately if required.
+
+## 5. Daily receipt and spreadsheet workflow
+
+### 5.1 Prepare the workbook
+
+1. On **Scanner & Setup**, choose Business Expenses, Travel & Per-Diem, Tax Deductions, or Contractor & Freelance; alternatively tap **Upload .xlsx/.xls**.
+2. Business Expenses and Travel & Per-Diem contain seeded example rows. Delete them before real records are added.
+3. Use a copy of any imported workbook. Check headers, row count, and several source rows before scanning. Use unique, nonempty column headers.
+4. Export before choosing another template or importing another workbook; these actions replace current data without a save prompt.
+
+The unchanged custom spreadsheet engine reads only XLSX `xl/worksheets/sheet1.xml`. Export reconstructs one sheet and does not preserve other sheets, formatting, formulas, charts, or workbook features. Sparse cells may shift values because coordinates are ignored; duplicate headers can overwrite mapped values. Date formatting and rich text shared strings are not fully interpreted. Legacy binary XLS is not implemented despite the upload label. SpreadsheetML XML and basic comma/tab/semicolon-delimited text are recognized, with limited quoting support. Prefer simple contiguous XLSX data and independently verify import/export.
+
+### 5.2 Capture and review
+
+1. Confirm the active provider and model. Settings changes do not erase workbook rows.
+2. Place one receipt flat in good light with merchant, date, and total visible. Tap **Camera** or **Gallery**. Without a configured key, the app directs you to setup.
+3. Wait for analysis. The image is sampled before decoding, rotated for common EXIF rotation values, bounded to 1280 pixels on its longest side, and sent as JPEG quality 85. Mirrored EXIF orientations are not specifically handled.
+4. A successful response opens **Review Mapped Data**, showing provider/model. Failures should show an error without invented sample values.
+5. Compare every mapped field with the original receipt. Correct amounts, dates, merchant, category, payment, and custom columns; leave unknowns blank. AI output is not independently verified by the app.
+6. Check the editable final-amount field directly. The summary looks for the first column containing total/amount/cost; **Subtotal** can match before **Total Amount** and show the wrong number.
+7. Tap **Add to Sheet** once and verify the appended row in the Spreadsheet tab. There is no duplicate receipt detection.
+
+Do not change provider, model, endpoint, or workbook during analysis or review. Provider/configuration are captured for a scan, and a changed header list blocks append, but switching to another workbook with identical headers is not detected. Discard and rescan if you change the target workbook.
+
+The parser leaves missing fields blank, but it accepts any parseable JSON object without enforcing receipt completeness or numeric/date types. Even `{}` may become an empty successful receipt. Reject unrelated, empty, or implausible results manually.
+
+### 5.3 Demo mode
+
+Use **DEMO SAMPLES (NO KEY REQUIRED)** for learning the workflow. Review identifies **Demo Mode** and allows a test append. Demo rows are ordinary workbook rows after append; export does not retain a separate demo classification. Keep a separate test workbook and remove all demo/sample rows before real use.
+
+### 5.4 Save and hand off
+
+1. Delete an incorrect row with **Delete Row**. There is no table edit or undo interface; rescan or correct an exported copy externally.
+2. Tap **Download .xlsx**, select an approved destination, and save a dated copy.
+3. Open that file in an external spreadsheet reader. Verify headers, row count, last row, amounts, and absence of repair warnings. The export code can report success even if the document provider returns no output stream.
+4. Use the share icon for an approved receiving app. Verify delivery there; the app's share status only establishes that it opened the chooser.
+5. Retain original receipts under your organization's policy. At the next session, reimport the last verified export.
+
+Do not rely on the displayed grand total: it sums every total/amount/cost-like column and can count Subtotal plus Total Amount. Dollar symbols are not currency conversion. Verify the final-amount column and currency externally.
+
+## 6. Development setup and running
+
+The app remains Kotlin/Compose with OkHttp, minimum API 24, compile SDK 36 minor API 1, target SDK 36, application ID `com.aistudio.receiptscanner.xkvjtw`, namespace `com.example`, version code 1/version name 1.0.
+
+Install Git, compatible Android Studio, Android SDK Platform 36.1, Build Tools 36.0.0, platform tools, and a device/emulator. Pins remain AGP 9.1.1, Gradle 9.3.1, Kotlin Compose 2.2.10, and KSP 2.3.5. Use JDK 17 for Gradle; Java source/target 11 in the build does not change this runtime requirement. See the [official AGP compatibility table](https://developer.android.com/build/releases/agp-9-1-0-release-notes).
 
 ```powershell
 git clone https://github.com/whitequill-software/receipt-scanner-mobile.git
@@ -53,223 +143,166 @@ Set-Location receipt-scanner-mobile
 git rev-parse HEAD
 ```
 
-Record the source commit. Open the repository root in Android Studio. Set the SDK location through the IDE; the resulting `local.properties` is ignored by Git.
-
-### 3.3 Restore missing build prerequisites
-
-The reviewed tree has `gradle/wrapper/gradle-wrapper.properties` but lacks `gradlew`, `gradlew.bat`, and `gradle/wrapper/gradle-wrapper.jar`. Wrapper commands will fail until these are restored. Obtain the original trusted wrapper files, or install Gradle 9.3.1 from its official distribution and generate them from the root:
+Open the repository root in Android Studio and configure the SDK location. The reviewed tree still lacks `gradlew`, `gradlew.bat`, and the wrapper JAR. Restore trusted wrapper files, or generate them using an official Gradle 9.3.1 installation:
 
 ```powershell
 gradle --version
 gradle wrapper --gradle-version 9.3.1 --distribution-type bin
 ```
 
-If project configuration prevents generation, create the wrapper in a separate minimal Gradle project and copy only the generated wrapper files into this project. Review and commit the scripts, wrapper JAR, and properties as a separate maintenance change. Do not download a wrapper JAR from an arbitrary repository. These repairs are instructions, not changes included with this SOP.
+If configuration blocks generation, generate a wrapper in a separate minimal project and copy only trusted generated wrapper files. Review/commit these repairs separately. Do not obtain wrapper JARs from arbitrary repositories.
 
-The debug build explicitly expects `debug.keystore` at the repository root. It is ignored and absent in the reviewed tree. Restore the original debug keystore when an installed evaluation app must accept an update. For a new local installation only, create a development key with the alias/passwords expected by `app/build.gradle.kts`:
+Debug signing expects root `debug.keystore`, which is absent and ignored. Restore the original for updates, or generate a new development-only key for a fresh install:
 
 ```powershell
 keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
 ```
 
-Do not use this debug key for a production release. A newly generated key will not update an app signed with a different key.
+Never use that key for production. A different signing key cannot update an existing installation signed by the original key.
 
-### 3.4 Configure Gemini for evaluation
+No shared AI key is required in `.env`. Configure user credentials through the running app. The Secrets Gradle plugin still reads `.env`; ensure any old local `.env` containing GEMINI_API_KEY is removed or sanitized before building, because removing the code reference alone does not establish that the plugin cannot generate/package that stale value. Firebase libraries remain declared, but receipt calls use direct provider REST APIs; `google-services.json` is absent and configured to warn.
 
-1. Create or obtain a project-approved Gemini API key through Google AI Studio. Confirm that the project can access the configured model and has appropriate quota. No live API call was made in this review.
-2. Copy `.env.example` to `.env` in the repository root:
-
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-3. Edit `.env` locally and replace `MY_GEMINI_API_KEY` with the evaluation key. Keep the Java-properties form `GEMINI_API_KEY=value`. Do not paste keys into tickets, screenshots, source, or this SOP.
-4. Sync and rebuild the app. The Secrets Gradle plugin generates the value read through `BuildConfig`; editing `.env` does not update an already installed APK.
-5. Use a sanitized test receipt and compare the output with the original. Demo samples do not prove the API works.
-
-The default placeholder permits demo behavior without a key. Despite Firebase libraries and the Google Services plugin being declared, the receipt scanning implementation uses the Gemini REST endpoint directly. No Firebase initialization or App Check protection of this request is implemented. `google-services.json` is absent and the build is configured to warn about its absence; do not invent a Firebase setup requirement for this scanning path.
-
-The model name is hardcoded in `GeminiVisionService.kt`. Check [the official model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash) and project access before each release. A model change requires a source change, rebuild, and regression test.
-
-## 4. Build and run
-
-After completing section 3, sync Gradle and select the `app` module and `debug` variant in Android Studio. Start an API 24+ device/emulator and run the app. Prefer a physical device for camera testing and an API 36 emulator for the current test configuration.
-
-PowerShell alternatives from the repository root:
+After prerequisites are ready:
 
 ```powershell
-.\gradlew.bat --version
 .\gradlew.bat :app:assembleDebug
 adb devices
 .\gradlew.bat :app:installDebug
 adb shell am start -n com.aistudio.receiptscanner.xkvjtw/com.example.MainActivity
 ```
 
-Expected APK: `app/build/outputs/apk/debug/app-debug.apk`. Confirm the app opens with **Scanner & Setup** and **Spreadsheet** tabs. The initial Business Expenses workbook contains a sample row; remove it before real use.
+Expected debug APK: `app/build/outputs/apk/debug/app-debug.apk`. On macOS/Linux use `./gradlew`. Run through Android Studio if preferred. Verify demo mode first, then configure an evaluation key and test a sanitized receipt.
 
-For macOS/Linux, use `./gradlew` after making the script executable. Android SDK/JDK and signing requirements remain the same.
+## 7. Testing and acceptance
 
-## 5. Daily receipt processing
-
-### 5.1 Choose the workbook
-
-1. Export any current work before changing the target workbook.
-2. On **Scanner & Setup**, choose a starter template or tap **Upload .xlsx/.xls**. The picker accepts any file type, so select a supported spreadsheet deliberately.
-3. Available templates: **Business Expenses**, **Travel & Per-Diem**, **Tax Deductions**, and **Contractor & Freelance**. The first two include example rows; delete them for real records.
-4. For an imported file, compare the headers, row count, and several rows against the original before scanning. Use unique, nonempty headers such as Date, Merchant, Category, Tax, and Total Amount.
-
-Import limitations matter: only the hardcoded XLSX `xl/worksheets/sheet1.xml` is read. Other sheets, formatting, formulas, charts, and workbook features are not preserved on export. Sparse cells can shift values because cell coordinates are ignored. Duplicate headers can overwrite values in the row map. Excel date formatting is not interpreted. Rich text shared strings and complex CSV quoting are not fully handled. Legacy binary `.xls` is not implemented; convert it to a simple XLSX first. Use a copy of the source workbook, never its only copy.
-
-### 5.2 Capture and review
-
-1. Keep one receipt flat, fully visible, and well lit. Include the merchant, date, line items, and final total. Use only receipt data approved for transfer to Google.
-2. Tap **Camera** or **Gallery**. Camera capture uses an external camera application; if launching it fails, the code attempts to open the gallery. Gallery uses Android's visual media picker.
-3. Wait for **Review Mapped Data**. Request connect/read/write timeouts are each 60 seconds; there is no explicit end-to-end call timeout or user-facing retry control.
-4. Compare each editable column with the original receipt. Correct date, merchant, amounts, category, and payment details. Leave unknown values blank rather than guessing. Check custom columns manually.
-5. Treat sample-looking values, unrelated merchants, today's date substituted for an unknown date, or unexpected defaults as unverified. An API failure may still produce the normal review dialog. Discard the scan or manually replace every field using the receipt.
-6. Tap **Add to Sheet** once. The app appends a row and switches to the Spreadsheet tab. It does not detect duplicate receipts.
-7. Check the appended row. Editable mapped fields are authoritative: the merchant/total summary card and success message may still show the original extracted values after edits.
-
-The fallback matcher guesses categories and can supply `Yes` for reimbursable/deductible, `Local` for location, and a random receipt reference. These are not verified business facts. The UI's `$` symbols do not establish the receipt currency; mixed currencies and exchange conversion are not implemented.
-
-### 5.3 Correct, save, and finish
-
-1. Use the row's **Delete Row** action to remove an incorrect row. There is no table edit interface or undo flow; rescan and correct the review fields, or correct the exported workbook externally.
-2. Tap **Download .xlsx** and choose a destination and filename. Save a dated copy to an approved folder.
-3. Open the saved file in Excel or another approved spreadsheet reader. Verify headers, row count, latest row, key amounts, and that the file opens without repair warnings. An app success banner alone is insufficient: the export code can report success even when the destination provider returns a null output stream.
-4. To hand off a copy, tap the share icon and select an approved destination. Opening the Android share chooser does not prove delivery; check the destination yourself. Sharing generates a cached XLSX copy.
-5. Retain the original receipt according to your organization's policy. Exported workbooks contain mapped values, not embedded receipt images or a durable image audit trail.
-
-Reimport the last verified export to continue after an app restart. Do not switch templates or import a different workbook until current work is safely exported; these actions replace the current workbook without a save prompt.
-
-## 6. Verification before release
-
-### 6.1 Automated checks
-
-Run after the environment and wrapper are prepared:
+### Automated checks
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-The second command requires a connected device/emulator. Preserve task exit codes and reports, normally under `app/build/reports/tests/`, `app/build/reports/androidTests/connected/`, and `app/build/reports/lint-results-debug.html`.
+The device test requires a connected emulator/device. Retain exit codes and reports under `app/build/reports/tests/`, `app/build/reports/androidTests/connected/`, and the lint report location printed by Gradle.
 
-Existing tests cover column letters through AA, one simple XLSX generate/parse round trip, two fallback column matches, the app name under Robolectric SDK 36, and the application package on device. They do not validate live Gemini behavior, error labeling, camera permissions, persistence, complex spreadsheet import, or export delivery. Passing these tests alone does not establish release readiness.
+The updated Robolectric tests use SDK 34 and cover encrypted credential lifecycle/provider separation, corrupt-file recovery, profile metadata, workbook preservation on settings change, header drift, summary edits, and demo outcomes. Other tests cover simple XLSX round trips, column letters, basic receipt parsing, selected sanitized errors, endpoint security checks, and URL normalization. The instrumented test checks the app package.
 
-### 6.2 Manual acceptance checklist
+These tests do not establish real Android Keystore persistence: the credential class contains an in-memory JVM AES fallback when AndroidKeyStore is unavailable. There are no provider network mock/redirect/cancellation tests in the inspected test files. Run device tests for Keystore and backup behavior before release.
 
-Use sanitized fixtures and a separate test workbook. Record device/OS, app version, commit, expected outcome, actual outcome, and pass/fail.
+### Manual acceptance record
 
-- Launch, navigate both tabs, and open/close Help.
-- Load every template and identify/remove seeded rows.
-- Exercise a quick sample, edit a mapped field, add once, verify the table value, and delete the row.
-- Capture with camera and select through Gallery; test cancel and denied camera access. The manifest declares CAMERA, but no runtime permission request is implemented in the reviewed capture UI; document behavior on each supported device.
-- Scan a real test receipt with a valid key and compare every field. Separately test placeholder key, invalid key, airplane mode, and malformed/failed API response. Confirm operators cannot mistake simulation for successful extraction; the reviewed code has a known failure here.
-- Import/export a simple contiguous XLSX; compare all cells. Also test sparse cells, duplicate headers, formulas, dates, multiple sheets, CSV quoting, and binary XLS to document unsupported cases and prevent silent corruption.
-- Download to local storage and an approved document provider; cancel the picker; verify actual output bytes and reopening. Confirm shared output reaches the intended recipient.
-- Export, force-stop/restart, and reimport. Verify restoration from the export; do not expect unsaved state to survive process death.
-- Compare the displayed total with independently calculated totals. The implementation sums every column whose name contains total, amount, or cost, so Subtotal and Total Amount can both be counted.
+Record commit, APK version/hash, device/OS, provider/model, sanitized fixture, expected/actual outcome, and pass/fail. Never record keys.
 
-**Review validation status:** source, configuration, test files, full repository tree, branch metadata, and releases were inspected. No build, automated tests, installation, live receipt scan, or signed release was executed. `java`, `gradle`, `adb`, and `keytool` were not available on the review shell's PATH. No release readiness certification is implied.
+- Save two different provider keys, restart, reselect the intended provider, validate and scan. Confirm profile/key persistence and workbook behavior separately.
+- Replace/delete one key without affecting another; simulate invalidation/corruption and verify recovery guidance. Verify credentials are absent from backups/transfers.
+- Test no key, invalid key, retired/inaccessible model, rate limit, timeout, malformed/empty output, and a refused request. Confirm no fake receipt is appended.
+- Compare validation results with a real sanitized image scan for each provider/model being advertised.
+- Verify custom exact-origin isolation, redirects, keyless behavior, and HTTPS enforcement after relevant fixes. Current implementation has known gaps; record failures rather than accepting them.
+- Test camera/gallery, cancellation, permission denial, and image rotation on API 24 and a current Android device. No runtime CAMERA permission request appears in the reviewed capture component.
+- Edit merchant/date/total and subtotal; verify review summary and appended fields. Change headers and confirm append is blocked; also test replacement with a workbook using identical headers.
+- Append a demo only in a test workbook; verify that removing all sample rows is part of handoff.
+- Import/export simple and sparse XLSX, duplicate headers, date/formula/multi-sheet fixtures, and currency-prefixed amounts. Independently open output and reconcile totals.
+- Export to approved local/cloud document providers, cancel export/share, and verify actual destination files/delivery.
+- Inspect a release APK to ensure no old shared key is present. Do not print extracted values in reports.
 
-## 7. Deployment and updates
+**This SOP's verification status:** complete source/configuration/test-tree inspection and document evidence checks only. `java`, `gradle`, `adb`, and `keytool` were unavailable on the review shell's PATH. Builds, automated tests, device behavior, live provider calls, and APK credential inspection were not run. Commands here are procedures, not reported passing checks.
 
-There is no committed automated build/deployment pipeline. The following is a manual release procedure to use after the acceptance and security gates pass.
+## 8. Deployment and recovery
 
-1. Choose a reviewed commit and complete section 6. Resolve the production blockers in section 11, especially simulated success, exposed credentials, and loss of unsaved data.
-2. Increase `versionCode` above the last distributed build and set `versionName` in `app/build.gradle.kts`. Keep the application ID stable for updates.
-3. Obtain the correct release/upload keystore and store it outside the repository. The release configuration reads `KEYSTORE_PATH`, `STORE_PASSWORD`, and `KEY_PASSWORD`; alias is fixed to `upload`. The fallback keystore path is root `my-upload-key.jks`, which is absent. Prefer an explicit external path.
-4. Provide signing variables through a secure local session or secret manager. Do not commit keys or passwords. If using Android Studio's signed bundle wizard, ensure the existing Gradle signing configuration receives the required environment variables; restart the IDE from that configured environment if needed.
-5. Build the chosen distribution artifact:
+No `.github/workflows` files are present. Use a manual release process until a reviewed pipeline exists.
+
+1. Select a reviewed commit and resolve the release gates in section 10, including endpoint isolation/redirect handling, model options, credential fallback, and acceptance failures.
+2. Export users' work before upgrade. Increase `versionCode` above the last distributed version and set `versionName`; retain the application ID.
+3. Provision the correct release/upload keystore outside the repository. Existing configuration reads `KEYSTORE_PATH`, `STORE_PASSWORD`, and `KEY_PASSWORD`; alias is `upload`. Root `my-upload-key.jks` is the fallback path but is absent. Keep signing secrets out of source and reports.
+4. Sanitize old build environment files, then build:
 
    ```powershell
    .\gradlew.bat :app:assembleRelease
    .\gradlew.bat :app:bundleRelease
    ```
 
-6. Verify APK signing with the installed Android SDK `apksigner` tool. Expected outputs are `app/build/outputs/apk/release/app-release.apk` and `app/build/outputs/bundle/release/app-release.aab`. Verify actual paths in the build output. APK is for approved direct installation; AAB is for a configured app-store distribution process.
-7. Install the release APK on a test device, or use the store's internal testing channel. Repeat a real scan and export/reopen test with release configuration. Debug success is insufficient.
-8. Before upgrading a user's app, export and verify its workbook. For direct APK updates, retain the same signing identity. Record source commit, version, checks, artifact SHA-256, signing certificate fingerprint, release notes, and distribution location. Keep passwords and private keys out of this record.
-9. Distribute through the release owner's approved channel. Store account setup, listing, privacy disclosures, and store approval are outside the committed repository and must be completed for public distribution. Do not infer an existing Play listing from this source.
+5. Verify signing with SDK `apksigner`, inspect the release artifact for stale shared credentials, and run acceptance tests on that release build. Expected artifacts: `app/build/outputs/apk/release/app-release.apk` and `app/build/outputs/bundle/release/app-release.aab`; confirm actual paths from build output.
+6. Distribute APKs through an approved direct channel or an AAB through a configured store/internal-testing process. No store listing or release approval was verified here.
+7. Record source commit, version, artifact SHA-256, signing certificate fingerprint, checks, known limitations, and distribution location. Keep passwords/private keys out of the record.
 
-Release shrinking is currently disabled (`isMinifyEnabled = false`). Changing that requires regression testing; obfuscation would not make an embedded API key secret.
+For a faulty release, stop distribution, preserve verified exports, fix/revert the source defect, and issue a tested higher-version build with the required signing identity. Avoid uninstalling as a first recovery step: it can remove local credentials/cache and require re-entry. Reimport the verified workbook and check for duplicates.
 
-### Recovery from a bad release
+## 9. Security and migration
 
-Stop distributing the affected artifact. Preserve exported workbooks and the failing version/commit details. Revert the defect in source, build a corrected artifact with a higher version code and the same required signing identity, rerun acceptance checks, and distribute the fix. Avoid uninstalling as a first recovery step: app-local data/cache can be lost, and a lower-version APK may not install as an update. Reimport a verified workbook after recovery and reconcile duplicate rows.
+Credentials are AES-256-GCM encrypted into app-private `byok_credentials.enc`, with a key normally generated in AndroidKeyStore. Hardware-backed storage is device dependent and is not enforced or verified by this code. If the Keystore cannot initialize, the same production class falls back to an in-memory JVM AES key; this is not restricted to test builds. Maintainers must make production storage fail closed and separate the test implementation.
 
-## 8. Maintenance routine
+Provider model/endpoint metadata is saved separately in plaintext `byok_profiles.json`; it should contain no keys. Backup XML excludes `byok_credentials.enc` and `byok_prefs.xml`, but the actual metadata JSON is not excluded. Do not put credentials or secrets in endpoint URLs; its URL/profile can be backed up or displayed.
 
-- **Each session:** verify workbook destination and baseline rows; export/reopen before exit; retain approved receipt originals.
-- **Each release:** review this SOP against code changes; verify model access, error behavior, signing configuration, dependency compatibility, import/export fixtures, and privacy disclosures.
-- **Monthly or after an incident:** review Gemini quota/usage and unusual charges in the relevant Google project, rotate exposed evaluation keys, review dependency/security updates, and verify access to encrypted signing-key backups. Do not upgrade all pinned dependencies blindly.
-- **Periodically:** remove stale shared copies and receipt caches only after verified exports and required evidence retention. Cache is temporary and the app has no dedicated retention/cleanup UI.
+Keys are decrypted when needed, but loading a single provider key decrypts the entire stored key map. Plaintext strings exist temporarily in the settings/request flow. Do not claim that keys exist only during requests, that local deletion guarantees forensic erasure, or that a rooted/compromised device cannot access them. The UI does not set screenshot protection for the key dialog.
 
-Recommended engineering follow-ups are explicit scan status and error handling, durable workbook storage, save prompts before replacement, import validation, accurate single-amount totals, input limits, and meaningful regression tests. Introduce CI only after restoring a complete wrapper; run build, unit tests, and lint on documentation-appropriate paths and code changes, with a separate protected signing/release process.
+Before migration from a shared-key version:
 
-## 9. Troubleshooting
+1. Export/reopen existing workbooks.
+2. Remove old shared-key values from build environments and inspect new release artifacts.
+3. Have each user configure their own provider/key and perform a sanitized scan.
+4. The previous shared key may still exist in old distributed APKs. Review its provider usage and rotate/revoke it at the provider; a new BYOK build does not revoke it.
 
-| Symptom | Likely repository-specific cause | Action |
+Protect devices with screen lock and approved storage. Avoid screenshots of revealed keys; clear copied credentials from clipboard tools where applicable. Keep raw receipt/API details out of public issues. Error sanitization is partial: security-error branches may return raw text and the ViewModel's outer catch interpolates exception messages. Maintainers must close these gaps before claiming comprehensive redaction.
+
+Signing-key ignore coverage remains narrow: `debug.keystore` is excluded, but release `*.jks` files are not broadly excluded. Keep release keys external and add appropriate exclusions before introducing signing assets.
+
+## 10. Remaining findings and release gates
+
+These findings describe the reviewed source, not fixes made by this SOP.
+
+| Priority | Finding | Required follow-up |
 | --- | --- | --- |
-| `gradlew.bat` or wrapper JAR missing | Wrapper scripts/JAR absent from reviewed tree | Complete section 3.3; use trusted Gradle 9.3.1 tooling |
-| Gradle cannot start or SDK unavailable | Wrong Gradle JDK or missing SDK 36.1 | Select JDK 17 for Gradle, install matching SDK/platform tools, sync again |
-| Debug signing fails | Root `debug.keystore` missing | Restore original key or generate a new local evaluation key as appropriate |
-| Update rejected due to signature | Installed app uses another signing key | Retrieve the correct key; export before considering reinstall |
-| Release signing fails | Missing keystore/passwords or alias mismatch | Verify external path, secure variables, and alias `upload`; never print passwords |
-| Google Services warning | `google-services.json` absent | Direct REST scanning does not use Firebase initialization; investigate only if Firebase features are introduced |
-| Unrelated merchant or plausible fake amounts | Placeholder key, network/API failure, response parsing fallback | Discard or replace every field from the original receipt; maintainer checks credentials, model access, HTTP status and quota |
-| Camera opens Gallery or no scan follows | Camera launch failed, permission denied, cancellation, or no camera app | Use Gallery; check app permissions/device camera support; maintainer implements/tests runtime permission handling |
-| Import shows wrong columns/empty rows | Unsupported binary XLS, malformed input, sparse cells, duplicate headers or fallback parser | Reopen original externally, convert a copy to simple XLSX with contiguous cells and unique headers, verify every imported row |
-| Excel reports repair or bad values | Limited custom exporter, unsupported input or currency-formatted numeric text | Preserve original; export plain decimal amounts without currency prefixes; inspect output in an external reader before use |
-| Total too high | Summary includes Subtotal and multiple amount-like columns | Calculate using the intended final-amount column externally; fix summary logic before relying on it |
-| Changes disappear | Process death/restart or workbook replaced | Reimport last verified export; unsaved in-memory changes have no implemented recovery |
-| Export says success but file missing | Null provider stream, canceled/wrong destination, provider problem | Inspect destination and open file; retry to an approved local folder and verify bytes |
-| Share says done but recipient has nothing | App opened chooser; completion not verified | Check receiving app/destination; retry using a verified saved export |
+| High | Custom key bound to one provider slot; consent bound only to hostname | Bind credentials and confirmation to exact origin; require new credentials on destination change |
+| High | Automatic redirects remain enabled; application interceptor acts after OkHttp redirect processing | Reject authenticated cross-origin redirects and test all authentication headers; avoid redirecting endpoints meanwhile |
+| High | Production credential store permits an ephemeral fallback when Keystore is unavailable | Fail closed on Android; inject a test-only credential store; verify on-device restart/invalidation |
+| High | Workbook remains memory-only; import/template changes replace it | Add durable save/recovery and replacement prompts; export/reopen operationally until fixed |
+| High | Sparse XLSX cells can shift values; exports reconstruct one sheet | Validate/reject unsupported imports or fix parser; retain source copies and reconcile |
+| Medium | All current Anthropic dropdown models are retired | Refresh model choices and test adapter compatibility; allow current documented model identifiers |
+| Medium | Validation flags/banner overstate selected-model/vision checks | Report exactly which probe succeeded; invalidate results when inputs change |
+| Medium | Custom keyless server blocked by ViewModel; local HTTP exception not debug-only | Align settings, gate, networking, and documented support |
+| Medium | Summary picks Subtotal as a total; grand total double-counts amount-like columns | Select an explicit final-amount column for summary and aggregation |
+| Medium | `{}` can parse as a successful empty receipt; response completeness/types/finish status not enforced | Validate schema and meaningful extracted fields before Success |
+| Medium | Provider calls use blocking execute, broad exception catches, default connection retry and no call timeout | Implement/test coroutine cancellation and deliberate retry policy; avoid rapid manual retries |
+| Medium | Null export stream still reports success; share delivery not verified | Require successful output/write/close and precise status |
+| Medium | Wrapper scripts/JAR absent; device test coverage minimal | Restore trusted wrapper and add provider-network/Keystore/device regression tests |
+| Medium | Credential metadata backup and error redaction incomplete | Review actual files and all error paths; keep secrets out of URLs/messages |
 
-When reporting a defect, include source commit, app version, device/OS, action sequence, sanitized fixture, and expected/actual result. Capture only relevant sanitized Logcat/error details. Raw API errors are stored in `rawAiResponse` but are not surfaced by the review dialog; do not ask operators to recover them from that screen.
+Unchanged spreadsheet issues also include numeric export testing values after stripping `$` but writing the original text into numeric XML, unbounded ZIP/XML import reads, and no explicit XML external-entity hardening. Use trusted small files and plain decimal amounts until corrected. Changing release shrinking from its current disabled state requires regression tests and does not secure credentials by itself.
 
-## 10. Security and data handling
+## 11. Troubleshooting and maintenance
 
-1. **Credential boundary:** `.env` is ignored by Git but its Gemini value is compiled into the app and used in the request URL. It can be extracted from a distributed APK. Use only restricted evaluation credentials for the current implementation; move production access behind an authenticated service or another reviewed client-safe architecture before public distribution. Google's [API key guidance](https://ai.google.dev/gemini-api/docs/api-key) warns against exposing keys in production client applications.
-2. **Signing protection:** keep release keystores outside the repository, encrypted and access controlled, with recovery backups. The current `.gitignore` excludes `debug.keystore` but does not broadly exclude release `*.jks`, `*.keystore`, or `my-upload-key.jks`; add suitable exclusions in a separate reviewed change before introducing signing files.
-3. **Receipt disclosure:** the resized receipt image and column names go to Google's Gemini API over HTTPS. No in-app consent or configurable retention policy is implemented. Confirm organizational approval for the data and review applicable provider terms before real use. No legal compliance conclusion is made here.
-4. **Local and shared data:** camera receipts and generated share files remain in app cache until removed by app/system actions; there is no explicit cleanup routine. Exports can outlive the app. Use approved storage and recipients, device lock/encryption, and organization-defined retention.
-5. **Backup review:** `allowBackup=true` and backup/data extraction XML contains template rules. Review backup scope before adding persistent sensitive data. These rules do not implement an audit trail or workbook recovery.
-6. **Untrusted files:** import reads entire files/ZIP entries into memory; no explicit size limits, decompression quotas, or XML external-entity hardening is configured in the parser. Accept only trusted, reasonably sized workbooks until these controls are implemented. Large images are decoded before resizing and can also cause memory pressure.
-7. **Integrity controls:** do not rely on AI guesses for payment, currency, reference numbers, reimbursement, or financial classifications. Preserve originals and manually verify. No duplicate detection, immutable audit log, or receipt-to-export attachment is implemented.
-8. **Incident response:** revoke a suspected exposed key, review project usage, issue a corrected build, and remove affected shared files using approved procedures. Signing-key compromise requires the release owner's distribution-specific recovery process. Avoid posting receipt contents, credentials, or full request URLs in public issues.
+| Symptom | Action |
+| --- | --- |
+| No key configured after restart | Select the intended provider; restart defaults to Gemini. If its stored key is missing, re-enter and save it |
+| Validation succeeded but scan fails | Test selected model access and image support; validation did not upload an image or establish available generation quota |
+| Anthropic default gives model error | The default is retired; enter a current accessible image-capable model and validate/test it |
+| Authentication error | Check correct provider, entered key, permissions and provider-console status; replace and save if needed |
+| Quota/rate-limit error | Check provider usage/credits/limits; wait where appropriate; avoid repeated scans that may be billed |
+| Custom endpoint error | Verify full URL/path, HTTPS, model, hostname confirmation, and dedicated key; avoid redirects |
+| Local keyless server cannot scan | Not supported through the current ViewModel gate; requires a code fix |
+| Saved keys vanish or cannot decrypt | Re-enter keys and check all provider profiles; maintainer investigates Keystore initialization/invalidation |
+| Headers changed warning | Discard the result, choose the intended workbook, then scan again |
+| Blank or irrelevant receipt despite Success | Discard; parser does not enforce meaningful receipt content; try a clearer image and report sanitized evidence |
+| Workbook missing after closing | Reimport last verified export; unsaved in-memory rows have no recovery implementation |
+| Total looks wrong | Inspect final-amount fields externally; Subtotal matching and multiple amount columns can distort summaries |
+| Export banner but no valid file | Check actual destination, retry to approved local storage, and reopen the file |
+| Build fails on fresh clone | Restore wrapper, correct JDK/SDK, and debug keystore; do not add a shared provider key to solve setup |
 
-## 11. Findings and recommended priorities
+Each session, confirm provider/model, remove demo rows, and export/reopen. Each release, review model retirements, credential isolation, billing disclosures, signing setup, and device acceptance evidence. Periodically review dependency security updates, provider usage, and encrypted signing backups. Remove cached receipt/share files only after verified export and required retention.
 
-These are source-review findings; fixes are not included in this documentation change.
+Bug reports should include commit/app version, device/OS, provider/model, sanitized fixture, steps, and expected/actual behavior. Do not include keys, full authenticated requests, or private receipts. Report limitations honestly rather than treating a green validation banner as proof of a working release.
 
-| Priority | Finding and operational effect | Evidence / recommended fix |
-| --- | --- | --- |
-| High | Failures can yield fabricated receipt data with normal success UI. Missing-key simulation sets `isAiPowered=true` when no error string is supplied; review never uses that flag or `rawAiResponse`. | `GeminiVisionService.createSimulatedResult`, `parseGeminiJsonResponse`, `MappedReviewDialog`, `processReceiptImage`; separate demo, success and error states and prevent accidental commit |
-| High | Workbook has no durable persistence; changing template/import replaces it. | `ReceiptScannerViewModel`; add persistence and explicit save/replace handling |
-| High | Gemini credential is embedded in APK; declared Firebase/App Check dependencies do not protect the direct REST call. | `app/build.gradle.kts`, `GeminiVisionService`; implement production credential boundary |
-| High | XLSX sparse cell coordinates are ignored, duplicate headers overwrite map entries, and only `sheet1.xml` is imported; export reconstructs a single sheet. | `XlsxEngine.parseWorksheetXml`, `parseXlsxFromBytes`, `generateXlsxBytes`; validate/reject unsupported structures or use a robust engine |
-| Medium | Summary can double-count Subtotal and Total Amount. | `SpreadsheetTableView` matches all total/amount/cost headers; select one explicit final-amount field |
-| Medium | Export may report success with no output stream; share completion is not confirmed. | `exportToSafUri`, `shareSpreadsheet`; require successful write/close and precise status |
-| Medium | Export tests numeric eligibility after stripping `$` but writes the original trimmed text into numeric XML, allowing invalid numeric values such as `$12.50`. | `XlsxEngine.generateXlsxBytes`; serialize normalized numeric values and test interoperability |
-| Medium | Camera permission is declared without runtime request in capture UI. | `AndroidManifest.xml`, `ReceiptCaptureSection`; implement/test permission flow or review whether permission is needed for chosen intent architecture |
-| Medium | Missing wrapper files and signing files prevent a self-contained fresh-clone build; no committed CI/release workflow. | Repository tree and `app/build.gradle.kts`; restore wrapper and document secure signing provisioning |
-| Medium | Parser/image memory limits and XML hardening absent; failures may be swallowed or interpreted as delimited text. | `XlsxEngine`, `loadAndScaleBitmap`; validate types, bound resource use, reject malformed input visibly |
-| Low | Help claims automatic/100% matching, while guesses and unsupported spreadsheet cases exist. Review summary is stale after mapped edits. | `HelpDialog`, `MappedReviewDialog`, `updateMappedField`; align copy and summary with verified behavior |
+## 12. Evidence map
 
-## 12. Source map
+All implementation links below are pinned to the reviewed commit.
 
-All links below point to the reviewed source commit so future changes do not silently alter the evidence.
+- [Provider options and defaults](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/model/ProviderModels.kt)
+- [Settings interface](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/ui/components/SettingsDialog.kt)
+- [Workbook and provider lifecycle](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/ui/ReceiptScannerViewModel.kt)
+- [Credential encryption and profile storage](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/crypto/KeystoreCredentialStore.kt)
+- [Gemini adapter](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/provider/GeminiProvider.kt), [OpenAI adapter](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/provider/OpenAiProvider.kt), [Anthropic adapter](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/provider/AnthropicProvider.kt), and [custom adapter](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/provider/CustomOpenAiProvider.kt)
+- [HTTP client and redirects](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/net/SecureHttpClient.kt), [receipt parser](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/util/ReceiptJsonParser.kt), and [error sanitizer](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/byok/util/SanitizedErrorUtil.kt)
+- [Spreadsheet engine](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/spreadsheet/XlsxEngine.kt) and [review dialog](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/java/com/example/ui/components/MappedReviewDialog.kt)
+- [Build/signing configuration](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/build.gradle.kts), [manifest](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/AndroidManifest.xml), [backup rules](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/res/xml/backup_rules.xml), and [transfer rules](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/main/res/xml/data_extraction_rules.xml)
+- [Unit tests](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/test/java/com/example/ExampleUnitTest.kt) and [Robolectric tests](https://github.com/whitequill-software/receipt-scanner-mobile/blob/ad9d9c5fdfcfa8f2d505a2e123d70a3bee660500/app/src/test/java/com/example/ExampleRobolectricTest.kt)
 
-- [Build and signing configuration](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/build.gradle.kts)
-- [Dependency pins](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/gradle/libs.versions.toml) and [wrapper properties](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/gradle/wrapper/gradle-wrapper.properties)
-- [Environment template](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/.env.example) and [ignore rules](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/.gitignore)
-- [Manifest and permissions](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/AndroidManifest.xml)
-- [Gemini request and simulation fallback](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/ai/GeminiVisionService.kt)
-- [Workbook lifecycle and export/share](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/ui/ReceiptScannerViewModel.kt)
-- [Spreadsheet import/export engine](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/spreadsheet/XlsxEngine.kt) and [templates](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/spreadsheet/DefaultTemplates.kt)
-- [Capture controls](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/ui/components/ReceiptCaptureSection.kt), [review dialog](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/ui/components/MappedReviewDialog.kt), and [spreadsheet table](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/main/java/com/example/ui/components/SpreadsheetTableView.kt)
-- [Unit tests](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/test/java/com/example/ExampleUnitTest.kt), [Robolectric test](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/test/java/com/example/ExampleRobolectricTest.kt), and [device test](https://github.com/whitequill-software/receipt-scanner-mobile/blob/008bd3778d73e521ad0e7df20134492a5943dcd9/app/src/androidTest/java/com/example/ExampleInstrumentedTest.kt)
-
-Update the reviewed commit, review date, behavior, commands, acceptance record, and findings when the implementation changes.
+Update this document's commit, date, behavior, acceptance results, and findings when code changes. Do not copy security claims forward without checking the implementation.
