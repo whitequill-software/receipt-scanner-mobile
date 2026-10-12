@@ -4,6 +4,21 @@ An Android app that turns receipt photos into reviewed spreadsheet rows using yo
 
 Built with Kotlin and Jetpack Compose, Receipt Scanner Mobile lets you capture a receipt, map its extracted values to your spreadsheet columns, review and edit the results, then export or share an XLSX file.
 
+## Screenshots
+
+<table>
+  <tr>
+    <th>Scanner and BYOK setup</th>
+    <th>Spreadsheet view</th>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/scanner-setup.png" alt="Receipt Scanner showing spreadsheet templates and the BYOK setup prompt" width="280"></td>
+    <td><img src="docs/screenshots/spreadsheet-view.png" alt="Receipt Scanner showing the spreadsheet table and XLSX export controls" width="280"></td>
+  </tr>
+</table>
+
+Screenshots show the app with its seeded example workbook. Remove sample rows before real use; the displayed total has the known calculation limitation described below.
+
 ## Features
 
 - Capture receipts with Camera or choose an image from Gallery.
