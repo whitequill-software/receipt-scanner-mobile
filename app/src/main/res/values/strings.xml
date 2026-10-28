@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Receipt Scanner</string>
+    <string name="camera_unavailable">No camera app is available. Enable or install a camera app, then try again.</string>
+    <string name="camera_access_blocked">Camera access was blocked. Check camera access in your device settings, then try again.</string>
+    <string name="camera_storage_error">Could not prepare a photo file. Check available storage, then try again.</string>
+    <string name="camera_launch_error">Could not open the camera. Try again, or use Gallery to select an existing receipt.</string>
+    <string name="camera_no_photo">The camera did not save a readable photo. Tap Camera to try again.</string>
 </resources>
