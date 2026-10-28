@@ -82,7 +82,6 @@ Custom support is conditional, not universal. The current UI/scanning flow requi
 - JDK 17 for Gradle
 - Android SDK Platform 36.1, Build Tools 36.0.0, and platform tools
 - Android device/emulator running API 24 or later
-- Gradle 9.3.1 for the initial wrapper repair described below
 
 Project pins include AGP 9.1.1, Kotlin Compose 2.2.10, and KSP 2.3.5. Java source/target compatibility is 11; Gradle runs with JDK 17. See [AGP compatibility](https://developer.android.com/build/releases/agp-9-1-0-release-notes).
 
@@ -93,13 +92,13 @@ Set-Location receipt-scanner-mobile
 
 Open the root in Android Studio and configure the SDK path.
 
-**Fresh-clone prerequisites:** the repository currently contains wrapper properties but lacks `gradlew`, `gradlew.bat`, and `gradle-wrapper.jar`. Restore trusted original wrapper files or generate them using an official Gradle 9.3.1 installation:
+The repository includes the Gradle 9.3.1 wrapper, generated using official Gradle tooling. No separate Gradle installation is required. Verify the wrapper with:
 
 ```powershell
-gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+.\gradlew.bat --version
 ```
 
-If project configuration prevents generation, follow the separate minimal-project procedure in the SOP. Do not download wrapper JARs from arbitrary sources.
+The distribution is SHA-256 pinned in `gradle/wrapper/gradle-wrapper.properties`. Wrapper provenance and CI details are in [Android build verification](docs/ANDROID_BUILD.md).
 
 Debug signing expects a root `debug.keystore`, which is intentionally not uploaded. Restore the original key for updates to an existing installation, or follow the SOP to generate a development-only key for a fresh install.
 
@@ -107,7 +106,7 @@ No shared AI credential is required in `.env`; enter user keys in the app. Remov
 
 ### Build and run
 
-After restoring the wrapper and debug signing prerequisites:
+After configuring the SDK and debug signing prerequisites:
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
@@ -126,6 +125,8 @@ Expected debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Alternatively, 
 ```
 
 The second command requires a device/emulator. Existing tests cover basic spreadsheet round trips, receipt mapping, selected errors, endpoint checks, credential lifecycle, profile metadata, settings/workbook preservation, header drift, and demo behavior. They do not prove live API compatibility or device Keystore/redirect security. See the SOP's acceptance checklist.
+
+GitHub Actions runs the unit tests, debug lint, and debug APK build for pull requests and pushes to `main`. A successful run publishes `receipt-scanner-debug-<commit>` in its Actions artifacts; test and lint reports are retained even on failure. See [Android build verification](docs/ANDROID_BUILD.md) for prerequisites, signing, and verification results.
 
 ## Security and data handling
 
