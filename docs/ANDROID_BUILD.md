@@ -64,7 +64,17 @@ are ignored as an additional safeguard.
 - Wrapper generation: passed using Gradle 9.3.1; JAR checksum matched the official value.
 - `gradlew.bat --version`: passed with Temurin JDK 17.0.20.1 and Gradle 9.3.1.
 - Workflow syntax: passed `actionlint`.
-- Android unit tests, lint, and debug APK: validation in progress; see the PR checks for CI results.
+- `:app:testDebugUnitTest`: passed, 14 tests, zero failures/errors/skips across both existing test classes.
+- `:app:lintDebug`: passed, zero errors and 46 warnings; no baseline or suppressions were added.
+- `:app:assembleDebug`: passed; generated `app/build/outputs/apk/debug/app-debug.apk`.
+- Combined Gradle invocation: `BUILD SUCCESSFUL`, 58 tasks executed in 3 minutes 9 seconds.
+- GitHub-hosted execution is reported separately in the PR checks.
+
+The existing Google Services configuration warns about absent
+`google-services.json`; the build still succeeds with its existing WARN policy.
+The local SDK tools also warned about an SDK XML version mismatch and inability
+to strip two native libraries; neither warning prevented building the APK.
+No Firebase configuration or AI credentials were fabricated to satisfy CI.
 
 The Windows execution environment initially failed before project configuration
 with `java.io.IOException: Unable to establish loopback connection`, caused by
