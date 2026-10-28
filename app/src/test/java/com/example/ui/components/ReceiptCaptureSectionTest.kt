@@ -28,12 +28,14 @@ import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
 import com.example.R
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
+import org.robolectric.util.ReflectionHelpers
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
@@ -43,6 +45,13 @@ class ReceiptCaptureSectionTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val registry = CaptureRegistry()
     private val captured = mutableListOf<Uri>()
+
+    @Before fun resetProviderRootForRobolectricSandbox() {
+        // Robolectric creates a different cacheDir per test, while AndroidX's
+        // process-wide root cache survives. Do not reuse a previous test's root.
+        ReflectionHelpers.getStaticField<MutableMap<String, Any>>(FileProvider::class.java, "sCache")
+            .remove("${context.packageName}.fileprovider")
+    }
 
     private inner class CaptureRegistry : ActivityResultRegistry(), ActivityResultRegistryOwner {
         override val activityResultRegistry: ActivityResultRegistry get() = this

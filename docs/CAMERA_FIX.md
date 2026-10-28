@@ -46,6 +46,12 @@ intent action/output/grants, missing-camera and security exceptions (including
 logging and no picker fallback), cancellation cleanup, empty successful output,
 saved-state restoration, and the existing API-key setup gate.
 
+The test fixture clears only this app authority's AndroidX FileProvider root
+cache before each test. Robolectric allocates a new app cache directory for
+every test, but AndroidX retains the previous directory in a process-wide static
+cache. The first Linux CI run exposed that fixture isolation issue; the fix
+retains the real FileProvider and its path/access checks.
+
 Run on a Linux host (matching CI):
 
 ```sh
