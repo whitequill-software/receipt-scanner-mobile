@@ -70,6 +70,12 @@ are ignored as an additional safeguard.
 - Combined Gradle invocation: `BUILD SUCCESSFUL`, 58 tasks executed in 3 minutes 9 seconds.
 - GitHub-hosted execution is reported separately in the PR checks.
 
+The first CI run failed in SDK setup with `Warning: Failed to find package
+'tools'` and `sdkmanager ... failed with exit code 1`. The setup action's default
+package list includes that obsolete package. The workflow now explicitly sets
+`packages: platform-tools` and installs the required platform/build tools in
+the following step.
+
 The existing Google Services configuration warns about absent
 `google-services.json`; the build still succeeds with its existing WARN policy.
 The local SDK tools also warned about an SDK XML version mismatch and inability
