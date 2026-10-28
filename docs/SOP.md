@@ -143,14 +143,13 @@ Set-Location receipt-scanner-mobile
 git rev-parse HEAD
 ```
 
-Open the repository root in Android Studio and configure the SDK location. The reviewed tree still lacks `gradlew`, `gradlew.bat`, and the wrapper JAR. Restore trusted wrapper files, or generate them using an official Gradle 9.3.1 installation:
+Open the repository root in Android Studio and configure the SDK location. The repository now includes the official Gradle 9.3.1 wrapper; verify it with:
 
 ```powershell
-gradle --version
-gradle wrapper --gradle-version 9.3.1 --distribution-type bin
+.\gradlew.bat --version
 ```
 
-If configuration blocks generation, generate a wrapper in a separate minimal project and copy only trusted generated wrapper files. Review/commit these repairs separately. Do not obtain wrapper JARs from arbitrary repositories.
+The wrapper was generated in a separate minimal project using official Gradle tooling and verified against Gradle's published checksum. See [Android build verification](ANDROID_BUILD.md) for provenance, CI behavior, and current results.
 
 Debug signing expects root `debug.keystore`, which is absent and ignored. Restore the original for updates, or generate a new development-only key for a fresh install:
 
@@ -243,7 +242,7 @@ Before migration from a shared-key version:
 
 Protect devices with screen lock and approved storage. Avoid screenshots of revealed keys; clear copied credentials from clipboard tools where applicable. Keep raw receipt/API details out of public issues. Error sanitization is partial: security-error branches may return raw text and the ViewModel's outer catch interpolates exception messages. Maintainers must close these gaps before claiming comprehensive redaction.
 
-Signing-key ignore coverage remains narrow: `debug.keystore` is excluded, but release `*.jks` files are not broadly excluded. Keep release keys external and add appropriate exclusions before introducing signing assets.
+Signing assets matching `*.keystore`, `*.jks`, and `*.p12` are ignored. Keep release keys external. CI generates a disposable debug key and never requires release credentials.
 
 ## 10. Remaining findings and release gates
 
@@ -263,7 +262,7 @@ These findings describe the reviewed source, not fixes made by this SOP.
 | Medium | `{}` can parse as a successful empty receipt; response completeness/types/finish status not enforced | Validate schema and meaningful extracted fields before Success |
 | Medium | Provider calls use blocking execute, broad exception catches, default connection retry and no call timeout | Implement/test coroutine cancellation and deliberate retry policy; avoid rapid manual retries |
 | Medium | Null export stream still reports success; share delivery not verified | Require successful output/write/close and precise status |
-| Medium | Wrapper scripts/JAR absent; device test coverage minimal | Restore trusted wrapper and add provider-network/Keystore/device regression tests |
+| Medium | Device test coverage minimal | Add provider-network/Keystore/device regression tests; wrapper restoration and CI are described in [Android build verification](ANDROID_BUILD.md) |
 | Medium | Credential metadata backup and error redaction incomplete | Review actual files and all error paths; keep secrets out of URLs/messages |
 
 Unchanged spreadsheet issues also include numeric export testing values after stripping `$` but writing the original text into numeric XML, unbounded ZIP/XML import reads, and no explicit XML external-entity hardening. Use trusted small files and plain decimal amounts until corrected. Changing release shrinking from its current disabled state requires regression tests and does not secure credentials by itself.
