@@ -1,6 +1,8 @@
 package com.example.ui.components
 
+import android.content.ActivityNotFoundException
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,9 +54,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
+import com.example.R
 import com.example.model.SampleReceipt
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -69,14 +71,41 @@ fun ReceiptCaptureSection(
     onSelectSampleReceipt: (SampleReceipt) -> Unit
 ) {
     val context = LocalContext.current
-    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    // The camera can recreate our activity while it is in the foreground.
+    var tempCameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var captureError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    fun discardPhoto(uri: Uri) {
+        try {
+            context.contentResolver.delete(uri, null, null)
+        } catch (exception: Exception) {
+            Log.w("ReceiptCapture", "Could not remove unused camera output", exception)
+        }
+    }
 
     // Camera Launcher with FileProvider
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
+        contract = remember { ReceiptCameraCapture() }
     ) { success ->
-        if (success && tempCameraUri != null) {
-            onReceiptCaptured(tempCameraUri!!)
+        val uri = tempCameraUri
+        tempCameraUri = null
+        if (!success) {
+            Log.d("ReceiptCapture", "Camera capture canceled or returned RESULT_CANCELED")
+            uri?.let(::discardPhoto)
+        } else {
+            val hasPhoto = try {
+                uri != null && context.contentResolver.openInputStream(uri)?.use { it.read() != -1 } == true
+            } catch (exception: Exception) {
+                Log.e("ReceiptCapture", "Could not read completed camera output", exception)
+                false
+            }
+            if (hasPhoto && uri != null) {
+                onReceiptCaptured(uri)
+            } else {
+                Log.e("ReceiptCapture", "Camera returned success without readable photo output")
+                captureError = context.getString(R.string.camera_no_photo)
+                uri?.let(::discardPhoto)
+            }
         }
     }
 
@@ -192,25 +221,31 @@ fun ReceiptCaptureSection(
                         if (!hasKey) {
                             onOpenSettings()
                         } else {
+                            captureError = null
                             try {
-                                val imagesDir = File(context.cacheDir, "receipt_images")
-                                if (!imagesDir.exists()) imagesDir.mkdirs()
-                                val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                                val imageFile = File(imagesDir, "RECEIPT_$timeStamp.jpg")
-                                val uri = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.fileprovider",
-                                    imageFile
-                                )
+                                val uri = createReceiptCameraUri(context)
                                 tempCameraUri = uri
                                 cameraLauncher.launch(uri)
                             } catch (e: Exception) {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                Log.e(
+                                    "ReceiptCapture",
+                                    "Camera launch failed; provider=${context.packageName}.fileprovider",
+                                    e
+                                )
+                                tempCameraUri?.let(::discardPhoto)
+                                tempCameraUri = null
+                                captureError = context.getString(
+                                    when (e) {
+                                        is ActivityNotFoundException -> R.string.camera_unavailable
+                                        is SecurityException -> R.string.camera_access_blocked
+                                        is java.io.IOException -> R.string.camera_storage_error
+                                        else -> R.string.camera_launch_error
+                                    }
                                 )
                             }
                         }
                     },
+                    enabled = tempCameraUri == null,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     ),
@@ -231,11 +266,13 @@ fun ReceiptCaptureSection(
                         if (!hasKey) {
                             onOpenSettings()
                         } else {
+                            captureError = null
                             photoPickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         }
                     },
+                    enabled = tempCameraUri == null,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
@@ -246,6 +283,15 @@ fun ReceiptCaptureSection(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(text = "Gallery")
                 }
+            }
+
+            captureError?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp).testTag("capture_error")
+                )
             }
 
             // Scanning / Analyzing Banner
